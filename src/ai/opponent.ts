@@ -373,7 +373,10 @@ export class Opponent {
       } else if (room <= 1.6) {
         // No room: back off and wait for a better place.
         note = 'waiting for a gap';
-        this.smoothThrottle *= 0.55;
+        // Cap, do not multiply: this runs every 500 Hz step, so a per-step
+        // factor of 0.55 is a decay with a 3 ms time constant and pins the
+        // throttle at zero instead of easing off it.
+        this.smoothThrottle = Math.min(this.smoothThrottle, 0.45);
         this.smoothBrake = Math.max(this.smoothBrake,
           clamp(closingRate / 25, 0, 0.55));
       }
@@ -381,7 +384,7 @@ export class Opponent {
     // Being held up by a slow car right in front: lift to avoid contact.
     if (nearestAhead < 12 && closingRate > 4) {
       this.smoothBrake = Math.max(this.smoothBrake, clamp(closingRate / 12, 0.15, 0.8));
-      this.smoothThrottle *= 0.3;
+      this.smoothThrottle = Math.min(this.smoothThrottle, 0.3);
       note = 'avoiding contact';
     }
     this.debug.note = note;
@@ -392,16 +395,27 @@ export class Opponent {
       // Steer back towards the tarmac, do not just keep pushing.
       const back = -Math.sign(q.lateral) * clamp(Math.abs(q.lateral) / 6, 0.1, 0.6);
       steer = clamp(steer * 0.5 + back, -1, 1);
-      throttle *= 0.55;
+      // Write to the smoothed values, since out.throttle reads those and the
+      // local `throttle` is already spent -- but cap rather than multiply,
+      // because a per-step factor at 500 Hz zeroes the throttle instantly and
+      // the car then cannot drive back onto the tarmac at all.
+      this.smoothThrottle = Math.min(this.smoothThrottle, 0.5);
       this.debug.note = 'off track, recovering';
     }
 
     // Keep the car pointed the right way if it ends up backwards.
     const headingError = Math.abs(((q.heading - car.heading + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
     if (headingError > Math.PI * 0.6 && speed < 14) {
-      throttle = 0;
-      brake = 0.7;
-      steer = clamp(steer + 0.35, -1, 1);
+      // Turn around by driving, not by braking. Stopping dead is a deadlock:
+      // with no forward speed the steered wheels generate no lateral force,
+      // so the heading error can never shrink and the car sits there forever.
+      // A little throttle keeps the car rolling in a tight arc until it comes
+      // back onto the racing direction.
+      this.smoothThrottle = Math.max(this.smoothThrottle, 0.45);
+      this.smoothBrake = 0;
+      const dir = Math.sign(
+        Math.sin(((q.heading - car.heading + Math.PI * 3) % (Math.PI * 2)) - Math.PI)) || 1;
+      steer = clamp(dir, -1, 1);
       this.debug.note = 'turned around';
     }
 
