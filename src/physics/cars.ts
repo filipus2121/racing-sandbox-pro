@@ -207,7 +207,7 @@ export const FORMULA_PRO: CarSpec = {
   },
   steer: {
     maxLock: 0.30,
-    speedSensitiveKmh: 34,
+    speedSensitiveKmh: 240,
     maxRate: 3.6,
     responseRate: 26,
     feedbackGain: 1,
@@ -276,7 +276,7 @@ export const GT3_VENOM: CarSpec = {
     fadePer100C: 0.1,
     discMass: 6.5,
   },
-  steer: { maxLock: 0.34, speedSensitiveKmh: 42, maxRate: 3.0, responseRate: 20, feedbackGain: 1 },
+  steer: { maxLock: 0.34, speedSensitiveKmh: 300, maxRate: 3.0, responseRate: 20, feedbackGain: 1 },
   fuel: { capacityL: 120, density: 0.75, burnRate: 0.000058 },
 };
 
@@ -341,7 +341,7 @@ export const STOCK_CHARGER: CarSpec = {
     fadePer100C: 0.14,
     discMass: 8.5,
   },
-  steer: { maxLock: 0.32, speedSensitiveKmh: 46, maxRate: 2.6, responseRate: 16, feedbackGain: 1 },
+  steer: { maxLock: 0.32, speedSensitiveKmh: 260, maxRate: 2.6, responseRate: 16, feedbackGain: 1 },
   fuel: { capacityL: 68, density: 0.75, burnRate: 0.000062 },
 };
 

@@ -111,14 +111,19 @@ export function steadyStateCorner(
   const rig = makeRig({ spec, setup, speed });
   warmTyres(rig.car, spec.tyreRear.tempOpt);
   const k = 1 / radius;
-  rig.input.throttle = 0.35;
-  // PI controller on the yaw-rate error, so the car actually settles on the
-  // demanded radius instead of stopping short of it.
+  // Two servos: one on yaw rate to hold the radius, one on speed. A fixed
+  // throttle does not hold speed through a corner, so latG = v*omega/G ends up
+  // measuring the throttle setting rather than the car's cornering grip.
   let integral = 0;
+  let throttle = 0.3;
   const drive = () => {
     const err = speed * k - rig.car.yawRate;
-    integral = Math.max(-0.4, Math.min(0.4, integral + err * 0.35 * DT));
-    rig.input.steer = Math.max(-1, Math.min(1, err * 0.55 + integral));
+    integral = Math.max(-0.4, Math.min(0.4, integral + err * 0.9 * DT));
+    rig.input.steer = Math.max(-1, Math.min(1, err * 1.1 + integral));
+    const errV = speed - rig.car.speed;
+    throttle = Math.max(0, Math.min(1, throttle + errV * 0.5 * DT));
+    rig.input.throttle = throttle;
+    rig.input.brake = errV < -1 ? 0.2 : 0;
     stepVehicle(rig.car, rig.input, rig.env, DT);
   };
   for (let i = 0; i < Math.round(6 / DT); i++) drive();

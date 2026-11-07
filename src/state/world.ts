@@ -192,7 +192,11 @@ export class World {
     const latG = latGOverride ?? clamp(
       (spec.tyreRear.muPeak * (effectiveMass(spec, ref.setup, 40) * G +
         (spec.aero.downforceFront100 + spec.aero.downforceRear100)) /
-        effectiveMass(spec, ref.setup, 40)) / G * 0.82,
+        // 0.64, not 0.82: measured on a steady 60 m circle the car holds
+        // 1.02 g, while the raw muPeak formula here predicts 1.30 g. Feeding
+        // the optimistic number to the AI makes it enter every corner about
+        // 14% too fast and run off.
+        effectiveMass(spec, ref.setup, 40)) / G * 0.64,
       1.0, 4.5,
     );
     const decel = latG * G * 0.9;
@@ -204,7 +208,8 @@ export class World {
       const s = r.car.spec;
       const m = effectiveMass(s, r.car.setup, r.car.fuelL);
       const df = s.aero.downforceFront100 + s.aero.downforceRear100;
-      const lat = (s.tyreRear.muPeak * (m * G + df)) / m * 0.9;
+      // Same measured derate as the profile above.
+      const lat = (s.tyreRear.muPeak * (m * G + df)) / m * 0.63;
       return {
         latAccel: lat,
         brakeAccel: lat * 0.95,
@@ -280,8 +285,10 @@ export class World {
         this.started = true;
         this.push('GREEN GREEN GREEN!', 'flag');
         for (const r of this.racers) {
-          r.lapStart = 0;
-          r.sectorStart = 0;
+          // this.time, not 0: the formation countdown has already run, and
+          // seeding 0 here charges the whole delay to the first lap.
+          r.lapStart = this.time;
+          r.sectorStart = this.time;
         }
       }
     }
@@ -399,7 +406,11 @@ export class World {
     const car = r.car;
     const q = this.track.query(car.x, car.y, r.lastIndex);
     const sNow = q.s;
-    let delta = sNow - r.trackS;
+    // Keep the raw difference: the wrap-around that signals a lap crossing is
+    // exactly the thing the normalisation below removes, so testing the
+    // normalised value can never fire.
+    const rawDelta = sNow - r.trackS;
+    let delta = rawDelta;
     if (delta > this.track.totalLength * 0.5) delta -= this.track.totalLength;
     if (delta < -this.track.totalLength * 0.5) delta += this.track.totalLength;
     r.wrongWay = delta < -0.02 && car.speed > 3;
@@ -427,8 +438,9 @@ export class World {
     }
 
     // ---- Lap crossing: s wrapped past the start/finish line --------------
-    if (!r.finished && delta < -this.track.totalLength * 0.5 && car.speed > 2) {
-      const lapMs = r.lapStart * 1000;
+    if (!r.finished && rawDelta < -this.track.totalLength * 0.5 && car.speed > 2) {
+      // Elapsed time, not the start timestamp.
+      const lapMs = (this.time - r.lapStart) * 1000;
       const valid = lapMs > 3000 && lapMs < 600000;
       if (valid) {
         r.lastLap = lapMs;
@@ -445,7 +457,7 @@ export class World {
         }
       }
       r.lap += 1;
-      r.lapStart = 0;
+      r.lapStart = this.time;
       r.sectorTimes = [];
       r.sectorIndex = 0;
       r.sectorStart = this.time;
