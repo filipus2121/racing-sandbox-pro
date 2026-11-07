@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Racing Sandbox Pro — 2D sim</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="view"></canvas>
+
+      <div id="hud">
+        <div id="tower" class="panel"></div>
+
+        <div id="center-top">
+          <div id="lights"></div>
+          <div id="flag-msg"></div>
+        </div>
+
+        <div id="telemetry" class="panel">
+          <div class="row big"><span id="speed">0</span><em>km/h</em></div>
+          <div id="rpmbar"><i></i></div>
+          <div class="row"><b id="gear">N</b><span id="rpm">0</span></div>
+          <div class="bars">
+            <div class="bar"><label>THR</label><div><i id="thr"></i></div></div>
+            <div class="bar"><label>BRK</label><div><i id="brk"></i></div></div>
+            <div class="bar"><label>STR</label><div class="steer"><i id="str"></i></div></div>
+          </div>
+          <div id="gforce"><i></i></div>
+          <div id="tyres"></div>
+          <canvas id="graph" width="260" height="86"></canvas>
+          <div id="lapbox">
+            <div><label>LAP</label><b id="lapno">0/0</b></div>
+            <div><label>LAST</label><b id="lastlap">--</b></div>
+            <div><label>BEST</label><b id="bestlap">--</b></div>
+            <div><label>CUR</label><b id="curlap">--</b></div>
+          </div>
+        </div>
+
+        <div id="messages"></div>
+        <div id="aidebug" class="panel"></div>
+        <div id="hint">WASD/arrows drive · Space handbrake · Shift/ctrl gears ·
+          O setup · T telemetry · L racing line · M minimap · R reset · P pause</div>
+      </div>
+
+      <div id="setup" class="panel hidden">
+        <h2>Car setup <span id="setup-car"></span></h2>
+        <div id="setup-fields"></div>
+        <div class="setup-note">
+          Every value is live. Change it and drive the next lap to feel it:
+          pressures and camber move the grip window, springs and anti-roll bars
+          move the balance, wing and final drive trade cornering for top speed.
+        </div>
+      </div>
+
+      <div id="menu" class="panel">
+        <h1>Racing Sandbox Pro</h1>
+        <p class="sub">A 2D top-down simulator. Rigid body, four wheels, Pacejka
+          tyres, load transfer, thermal and wear models — and opponents that
+          drive the same physics rather than following a rail.</p>
+        <div id="menu-fields"></div>
+        <button id="start">Start session</button>
+        <p class="keys">Drive: W/S throttle and brake, A/D steer, Space handbrake,
+          Shift/Ctrl up and down. O setup · T telemetry · L racing line · R reset.</p>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
