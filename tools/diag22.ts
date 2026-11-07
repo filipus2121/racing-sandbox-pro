@@ -26,6 +26,8 @@ for (let i = 0; i < 500 * 60; i++) {
       'steer', probe.steer.toFixed(2),
       'lat', q.lateral.toFixed(1).padStart(6), 'onTrk', q.onTrack ? 'Y' : 'n',
       'grip', q.grip.toFixed(2), 'surf', q.surface,
+      'tgt', ai.opponent!.debug.targetSpeed.toFixed(1).padStart(5),
+      'lim', ai.opponent!.debug.speedLimitAt.toFixed(1).padStart(5),
       '|', ai.opponent!.debug.note);
   }
 }
