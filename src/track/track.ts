@@ -227,7 +227,12 @@ export class Track {
           }
         }
       }
-      if (bestD < Infinity && r >= 1) break;
+      // Stop only once the best hit is provably closer than anything still
+      // unsearched. A point in ring k can be no nearer than (k-1)*cell, so
+      // after sweeping rings 0..r every remaining candidate is at least
+      // r*cell away. Breaking on the first non-empty ring instead returns a
+      // farther sample whenever a neighbour cell holds a closer one.
+      if (bestD < (r * this.cell) ** 2) break;
     }
     return best;
   }
@@ -242,6 +247,38 @@ export class Track {
     const dx = x - this.xs[i];
     const dy = y - this.ys[i];
     const lateral = dx * nx + dy * ny;
+    // Arc position by projecting onto the better of the two adjacent segments,
+    // rather than snapping to the nearest sample. Snapping quantises s to the
+    // sample spacing (about 2.6 m here, so up to 1.3 m of error), which is
+    // coarse enough to disturb sector timing; a tangent offset alone does not
+    // fix it either, because a point offset purely sideways has no tangent
+    // component at all.
+    let sAt = this.s[i];
+    {
+      const project = (a: number, b: number) => {
+        const ex = this.xs[b] - this.xs[a];
+        const ey = this.ys[b] - this.ys[a];
+        const len2 = ex * ex + ey * ey;
+        if (len2 < 1e-9) return null;
+        const t = clamp(((x - this.xs[a]) * ex + (y - this.ys[a]) * ey) / len2, 0, 1);
+        const px = this.xs[a] + ex * t;
+        const py = this.ys[a] + ey * t;
+        let sb = this.s[b];
+        if (sb < this.s[a]) sb += this.totalLength;
+        return {
+          d2: (x - px) * (x - px) + (y - py) * (y - py),
+          s: this.s[a] + (sb - this.s[a]) * t,
+        };
+      };
+      const cands = [project((i - 1 + n) % n, i), project(i, (i + 1) % n)];
+      let bestD = Infinity;
+      for (const c of cands) {
+        if (c && c.d2 < bestD) {
+          bestD = c.d2;
+          sAt = ((c.s % this.totalLength) + this.totalLength) % this.totalLength;
+        }
+      }
+    }
     const half = this.width[i] * 0.5;
     const absL = Math.abs(lateral);
     const rel = half > 0 ? clamp(lateral / half, -4, 4) : 0;
@@ -250,11 +287,18 @@ export class Track {
     let surface = this.surface[i];
     if (absL > half) {
       const over = absL - half;
-      if (over < 1.4 && this.surface[i] === SURFACE_TARMAC) surface = SURFACE_RUMBLE;
-    } else if (this.surface[i] !== SURFACE_TARMAC) {
-      // Painted run-off material only applies outside the tarmac.
-      surface = SURFACE_TARMAC;
+      if (over < 1.4) {
+        surface = SURFACE_RUMBLE;
+      } else if (this.surface[i] === SURFACE_TARMAC) {
+        // Unpainted run-off is grass. Leaving it as tarmac meant driving off
+        // the track kept full asphalt grip, so there was no penalty at all for
+        // leaving the racing surface.
+        surface = SURFACE_GRASS;
+      }
     }
+    // A painted surface is honoured wherever it was painted. Forcing tarmac
+    // back on inside the track edges made the editor brush a no-op on the
+    // racing surface itself, so painting grass or gravel there did nothing.
     const props = SURFACES[surface] ?? SURFACES[SURFACE_GRASS];
 
     // Rubber laid on the racing line adds grip right in the groove.
@@ -272,7 +316,7 @@ export class Track {
     void prev; void next;
 
     return {
-      s: this.s[i],
+      s: sAt,
       lateral,
       index: i,
       heading: h,
@@ -320,12 +364,17 @@ export class Track {
   pointAt(s: number, lateral = 0): { x: number; y: number; heading: number; index: number } {
     const n = this.xs.length;
     const target = ((s % this.totalLength) + this.totalLength) % this.totalLength;
+    // Last sample with s <= target, so the point is interpolated forward into
+    // segment [i, i+1]. Searching for the first sample with s >= target makes
+    // (target - s[i]) negative, which the clamp below folds to 0 -- so the
+    // "interpolated" position was always exactly a sample, and the arc
+    // coordinate came back quantised to the sample spacing.
     let lo = 0;
     let hi = n - 1;
     while (lo < hi) {
-      const mid = (lo + hi) >> 1;
-      if (this.s[mid] < target) lo = mid + 1;
-      else hi = mid;
+      const mid = (lo + hi + 1) >> 1;
+      if (this.s[mid] <= target) lo = mid;
+      else hi = mid - 1;
     }
     const i = lo;
     const j = (i + 1) % n;
@@ -370,13 +419,20 @@ export class Track {
   }
 
   /** Advance the weather: rain fills puddles, dry weather evaporates them. */
-  updateWeather(dt: number, rainMmH: number, evaporation = 0.35): void {
+  updateWeather(dt: number, rainMmH: number, evaporation = 0.0083): void {
     const n = this.xs.length;
+    // rainMmH * 0.00028 is rainfall in mm per second (12 mm/h -> 0.0034 mm/s).
     const add = rainMmH * 0.00028 * dt;
     for (let i = 0; i < n; i++) {
       const drainage = (SURFACES[this.surface[i]]?.drainage ?? 1);
-      const w = this.water[i] + add - evaporation * drainage * dt * (0.25 + this.water[i] * 0.6);
-      this.water[i] = clamp(w, 0, 6);
+      // Loss must scale with the water that is actually there. The previous
+      // constant term evaporated 0.0875 mm/s with an empty track -- a drying
+      // rate of 315 mm/h, 26x the heaviest rain -- so water could never rise
+      // above zero. Proportional loss with this coefficient gives a ~2 minute
+      // time constant: a wet track reaches an equilibrium film of about
+      // 0.4 mm under 12 mm/h and clears in a few minutes when the rain stops.
+      const loss = evaporation * drainage * dt * this.water[i];
+      this.water[i] = clamp(this.water[i] + add - loss, 0, 6);
     }
   }
 

@@ -70,9 +70,11 @@ describe('track geometry', () => {
 
   it('rain fills the track with water and dry weather clears it', () => {
     const t = buildPresetTrack(TRACK_PRESETS[1]);
-    for (let i = 0; i < 200; i++) t.updateWeather(0.1, 12);
+    // 90 s of 12 mm/h rain builds a ~0.2 mm film against a ~0.4 mm equilibrium.
+    for (let i = 0; i < 900; i++) t.updateWeather(0.1, 12);
     expect(t.water[0]).toBeGreaterThan(0.1);
-    for (let i = 0; i < 600; i++) t.updateWeather(0.1, 0);
+    // Four minutes without rain clears it back through the same time constant.
+    for (let i = 0; i < 2400; i++) t.updateWeather(0.1, 0);
     expect(t.water[0]).toBeLessThan(0.05);
   });
 

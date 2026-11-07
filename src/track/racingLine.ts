@@ -52,7 +52,11 @@ export function computeRacingLine(
 
   fill();
   const iterations = opts.iterations ?? 260;
-  const step = Math.max(0.02, track.maxSegmentLength() * 0.16);
+  // Small steps. Every point is relaxed against neighbours that are moving at
+  // the same time, so a large step overshoots and the line develops a
+  // high-frequency zigzag that adds curvature instead of removing it -- the
+  // opposite of what a racing line is for.
+  const step = Math.max(0.02, track.maxSegmentLength() * 0.04);
 
   for (let it = 0; it < iterations; it++) {
     // Curvature of the polyline through the candidate points.
@@ -87,6 +91,20 @@ export function computeRacingLine(
       const gain = clamp(Math.abs(c) * 40, 0, 1);
       lat[i] += dir * step * gain * cooling;
       lat[i] = clamp(lat[i], -limit(i), limit(i));
+    }
+    // Light lateral smoothing each sweep, so residual zigzag is damped out
+    // rather than being amplified by the next independent move.
+    const smoothed = Float64Array.from(lat);
+    for (let i = 0; i < n; i++) {
+      const a = (i - 1 + n) % n;
+      const b = (i + 1) % n;
+      smoothed[i] = clamp(lat[i] * 0.6 + (lat[a] + lat[b]) * 0.2,
+        -limit(i), limit(i));
+    }
+    for (let i = 0; i < n; i++) {
+      lat[i] = smoothed[i];
+      const nx = -Math.sin(track.heading[i]);
+      const ny = Math.cos(track.heading[i]);
       px[i] = track.xs[i] + nx * lat[i];
       py[i] = track.ys[i] + ny * lat[i];
     }
