@@ -84,27 +84,46 @@ const susp = (
 });
 
 const tyre = (
-  name: 'formula' | 'gt3' | 'stock',
+  name: 'formula' | 'gt3' | 'stock' | 'stockcar',
   isFront: boolean,
 ): TyreSpec => {
   const base = {
-    pressureOpt: name === 'stock' ? 1.55 : 1.35,
+    pressureOpt: name === 'stock' ? 1.55 : name === 'stockcar' ? 1.3 : 1.35,
     pressureK: 0.075,
-    tempOpt: name === 'stock' ? 85 : 92,
-    tempBand: name === 'stock' ? 34 : 30,
+    tempOpt: name === 'stock' ? 85 : name === 'stockcar' ? 88 : 92,
+    tempBand: name === 'stock' ? 34 : name === 'stockcar' ? 36 : 30,
     tempDrop: 0.5,
     heatGain: name === 'formula' ? 4.0 : 3.7,
     coolCore: 0.05,
     coolAmbient: 0.005,
-    wearRate: name === 'stock' ? 0.000045 : 0.00006,
+    wearRate: name === 'stock' ? 0.000045
+      : name === 'stockcar' ? 0.000052 : 0.00006,
     hydroSpeed: 22,
     rollingResist: name === 'formula' ? 0.011 : 0.014,
     relaxationLength: isFront ? 0.26 : 0.32,
-    width: name === 'formula' ? (isFront ? 0.26 : 0.33) : 0.28,
+    width: name === 'formula' ? (isFront ? 0.26 : 0.33)
+      : name === 'stockcar' ? 0.29 : 0.28,
     shapeB: 1.35,
     shapeC: 1.6,
     stiffLoadExp: 0.85,
   };
+  if (name === 'stockcar') {
+    // Goodyear Eagle radial, 28in tall, run at low pressure on the superspeedways.
+    // A heavy car on stiff sidewalls: the load-sensitivity is mild, so the tyre
+    // keeps working when the pack leans on it, but it overheats fast if the
+    // driver has to scrub it sideways for a whole run.
+    return {
+      ...base,
+      muPeak: 1.56,
+      loadSensitivity: 0.9,
+      refLoad: 3900,
+      corneringStiffness: 98000,
+      longStiffness: 74000,
+      camberThrust: 130,
+      inertia: isFront ? 2.6 : 2.8,
+      radius: 0.356,
+    };
+  }
   if (name === 'formula') {
     return {
       ...base,
@@ -345,10 +364,165 @@ export const STOCK_CHARGER: CarSpec = {
   fuel: { capacityL: 68, density: 0.75, burnRate: 0.000062 },
 };
 
+/**
+ * NASCAR Next Gen (Gen 7) superspeedway car.
+ *
+ * Real reference numbers used here: 5.86 L (358 ci) pushrod V8 around 670 hp
+ * at ~9000 rpm, 3300 lb minimum weight, 110 in wheelbase, 28 in tyres,
+ * five-speed sequential transaxle, four-wheel discs and a locked rear end.
+ * The body is blunt but the splitter and the deck lid spoiler make it far
+ * slipperier than the old Gen 6 car, which is what lets a pack stay together
+ * at 320 km/h - drafting is the whole game on a car like this.
+ */
+export const NASCAR_NEXTGEN: CarSpec = {
+  id: 'nascar-nextgen',
+  name: 'Next Gen Cup',
+  short: 'NG-7',
+  class: 'NASCAR',
+  bodyColor: '#f2c14e',
+  accentColor: '#1c2026',
+  massKg: 1540,
+  weightDistributionFront: 0.505,
+  inertiaYaw: 3250,
+  cgHeight: 0.5,
+  wheelbase: 2.794,
+  trackFront: 1.84,
+  trackRear: 1.83,
+  halfLength: 2.62,
+  halfWidth: 1.0,
+  massFactorAccel: 1.06,
+  unsprungMass: 28,
+  tyreFront: tyre('stockcar', true),
+  tyreRear: tyre('stockcar', false),
+  aero: {
+    downforceFront100: 520,
+    downforceRear100: 760,
+    // CdA ~1.06: a bluff body, but the Gen 7 package cleans the wake up enough
+    // for two-car and three-wide packs to form.
+    drag100: 500,
+    dragYawPerDeg: 22,
+    downforceYawPerDeg: 20,
+    groundEffectFrontPerMm: 1.8,
+    groundEffectRearPerMm: 1.2,
+    wingLiftPerDegFront: 10,
+    wingLiftPerDegRear: 22,
+  },
+  // Live rear axle on a panhard rod: soft in bump, very stiff in roll control
+  // from the track bar, and almost no antisquat - which is why the car is so
+  // sensitive to throttle on the exit and so loose when the rear tyres go off.
+  suspFront: susp(88000, 4400, 5400, 40000, 0.115, 0.022, 0.08),
+  suspRear: susp(82000, 4200, 5200, 18000, 0.12, 0.022, 0.12),
+  engine: {
+    peakTorque: 545,
+    peakRpm: 7200,
+    idleRpm: 1200,
+    redlineRpm: 9000,
+    engineBrakeTorque: 175,
+    inertia: 0.19,
+    responseRate: 13,
+    upshiftTime: 0.05,
+    downshiftTime: 0.09,
+  },
+  gearbox: {
+    // Xtrac P1356 sequential transaxle. Fifth gear at 3.55 final gives
+    // 321 km/h at the 9000 rpm shift light, which is the pack speed.
+    gears: [2.66, 1.96, 1.56, 1.28, 1.06],
+    finalDrive: 3.55,
+    efficiency: 0.95,
+    reverseRatio: 2.8,
+  },
+  // Spooled rear end: no torque split at all. Great on an oval, terrible
+  // anywhere with a slow corner, and the reason the car rotates on throttle.
+  diff: { lockRatio: 1.0, torqueBiasCap: 1.0, preloadNm: 300 },
+  brakes: {
+    // Four-wheel discs, new for Gen 7, with a lot of rear brake available.
+    frontMax: 6800,
+    rearMax: 4400,
+    buildRate: 9,
+    releaseRate: 12,
+    fadePer100C: 0.13,
+    discMass: 8.2,
+  },
+  steer: { maxLock: 0.30, speedSensitiveKmh: 280, maxRate: 2.8, responseRate: 17, feedbackGain: 1 },
+  fuel: { capacityL: 68, density: 0.75, burnRate: 0.000062 },
+};
+
+/**
+ * The pace car. Deliberately NOT in CAR_SPECS, so it never turns up as a
+ * selectable car or as an opponent - it is a session object, not an entrant.
+ *
+ * Slow on purpose: it has to be quick enough to hold a superspeedway field at
+ * a safe speed and slow enough that catching it is not a problem. Low
+ * downforce and a lot of drag, four soft tyres and no aids.
+ */
+export const PACE_CAR: CarSpec = {
+  id: 'pace-car',
+  name: 'Pace Car',
+  short: 'PACE',
+  class: 'Safety',
+  bodyColor: '#f5f5f5',
+  accentColor: '#e2a02b',
+  massKg: 1720,
+  weightDistributionFront: 0.52,
+  inertiaYaw: 3400,
+  cgHeight: 0.52,
+  wheelbase: 2.81,
+  trackFront: 1.62,
+  trackRear: 1.63,
+  halfLength: 2.4,
+  halfWidth: 0.96,
+  massFactorAccel: 1.05,
+  unsprungMass: 26,
+  tyreFront: tyre('stock', true),
+  tyreRear: tyre('stock', false),
+  aero: {
+    downforceFront100: 120,
+    downforceRear100: 180,
+    drag100: 700,
+    dragYawPerDeg: 18,
+    downforceYawPerDeg: 12,
+    groundEffectFrontPerMm: 0.4,
+    groundEffectRearPerMm: 0.4,
+    wingLiftPerDegFront: 0,
+    wingLiftPerDegRear: 0,
+  },
+  suspFront: susp(78000, 4200, 5200, 30000, 0.12, 0.022, 0.1),
+  suspRear: susp(72000, 4000, 5000, 22000, 0.125, 0.022, 0.12),
+  engine: {
+    peakTorque: 620,
+    peakRpm: 4600,
+    idleRpm: 900,
+    redlineRpm: 6600,
+    engineBrakeTorque: 150,
+    inertia: 0.22,
+    responseRate: 10,
+    upshiftTime: 0.09,
+    downshiftTime: 0.12,
+  },
+  gearbox: {
+    gears: [3.4, 2.2, 1.6, 1.2, 1.0],
+    finalDrive: 3.4,
+    efficiency: 0.93,
+    reverseRatio: 3.0,
+  },
+  diff: { lockRatio: 0.25, torqueBiasCap: 0.6, preloadNm: 40 },
+  brakes: {
+    frontMax: 5200,
+    rearMax: 2600,
+    buildRate: 8,
+    releaseRate: 11,
+    fadePer100C: 0.14,
+    discMass: 9,
+  },
+  steer: { maxLock: 0.34, speedSensitiveKmh: 260, maxRate: 2.4, responseRate: 15, feedbackGain: 1 },
+  fuel: { capacityL: 70, density: 0.75, burnRate: 0.00006 },
+};
+
 export const CAR_SPECS: Record<string, CarSpec> = {
   [FORMULA_PRO.id]: FORMULA_PRO,
   [GT3_VENOM.id]: GT3_VENOM,
   [STOCK_CHARGER.id]: STOCK_CHARGER,
+  [NASCAR_NEXTGEN.id]: NASCAR_NEXTGEN,
 };
 
 export function defaultSetup(spec: CarSpec): CarSetup {

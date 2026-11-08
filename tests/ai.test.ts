@@ -2,14 +2,18 @@ import { describe, expect, it } from 'vitest';
 import { World, PHYS_DT } from '../src/state/world.js';
 import { NO_INPUT } from '../src/physics/vehicle.js';
 import { defaultSetup, GT3_VENOM, FORMULA_PRO } from '../src/physics/cars.js';
-import { buildPresetTrack, TRACK_PRESETS } from '../src/track/presets.js';
+import { buildPresetTrack, TRACK_PRESETS, TrackPreset } from '../src/track/presets.js';
+
+/** Pinned by id: the menu order changes, these tests must not. */
+const ROAD_PRESETS: TrackPreset[] = ['riverside', 'kite', 'nordbank', 'highland']
+  .map(id => TRACK_PRESETS.find(p => p.id === id)!);
 import { CarSetup } from '../src/physics/cars.js';
 
 function makeWorld(opts: {
   preset?: number; aiCount?: number; laps?: number; seed?: number;
   setup?: Partial<CarSetup>; spec?: typeof GT3_VENOM;
 } = {}): World {
-  const track = buildPresetTrack(TRACK_PRESETS[opts.preset ?? 0]);
+  const track = buildPresetTrack(ROAD_PRESETS[opts.preset ?? 0]);
   const spec = opts.spec ?? GT3_VENOM;
   const setup: CarSetup = { ...defaultSetup(spec), ...(opts.setup ?? {}) };
   return new World({

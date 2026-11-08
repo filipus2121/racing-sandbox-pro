@@ -2,7 +2,17 @@ import { describe, expect, it } from 'vitest';
 import { Rng } from '../src/core/math.js';
 import { Track, SURFACE_GRASS } from '../src/track/track.js';
 import { computeRacingLine, computeSpeedProfile, estimateLapTime } from '../src/track/racingLine.js';
-import { TRACK_PRESETS, buildPresetTrack } from '../src/track/presets.js';
+import { TRACK_PRESETS, TrackPreset, buildPresetTrack } from '../src/track/presets.js';
+
+/**
+ * These tests were written against the road courses and assert things that are
+ * only meaningful on a track with slow corners (a banked oval has a nearly flat
+ * speed profile by design). Selecting them by id rather than by position in
+ * TRACK_PRESETS keeps them pointing at the same circuit when the menu order
+ * changes - which it does, because the oval is now first.
+ */
+const ROAD_PRESETS: TrackPreset[] = ['riverside', 'kite', 'nordbank', 'highland']
+  .map(id => TRACK_PRESETS.find(p => p.id === id)!);
 
 describe('track geometry', () => {
   const circle = (radius: number, n = 200): Track => {
@@ -60,7 +70,7 @@ describe('track geometry', () => {
   });
 
   it('painting a surface changes the grip a car gets there', () => {
-    const t = buildPresetTrack(TRACK_PRESETS[0]);
+    const t = buildPresetTrack(ROAD_PRESETS[0]);
     const q0 = t.query(t.xs[10], t.ys[10]);
     t.setSurfaceAt(t.xs[10], t.ys[10], SURFACE_GRASS, 20);
     t.refresh();
@@ -79,7 +89,7 @@ describe('track geometry', () => {
   });
 
   it('rubber builds up on the racing line and adds grip there', () => {
-    const t = buildPresetTrack(TRACK_PRESETS[0]);
+    const t = buildPresetTrack(ROAD_PRESETS[0]);
     const before = t.query(t.xs[50], t.ys[50]).grip;
     for (let i = 0; i < 200; i++) t.addRubber(50, 0.01);
     const after = t.query(t.xs[50], t.ys[50]).grip;
@@ -96,7 +106,7 @@ describe('track geometry', () => {
   });
 
   it('the spatial index agrees with a brute force search', () => {
-    const t = buildPresetTrack(TRACK_PRESETS[0]);
+    const t = buildPresetTrack(ROAD_PRESETS[0]);
     const rng = new Rng(42);
     for (let i = 0; i < 60; i++) {
       const s = rng.range(0, t.totalLength);
@@ -116,7 +126,7 @@ describe('track geometry', () => {
 
 describe('racing line and speed profile', () => {
   it('keeps the line inside the tarmac', () => {
-    const t = buildPresetTrack(TRACK_PRESETS[0]);
+    const t = buildPresetTrack(ROAD_PRESETS[0]);
     const line = computeRacingLine(t, { carHalfWidth: 1.0, margin: 0.8 });
     for (let i = 0; i < line.lateral.length; i++) {
       const limit = t.width[i] * 0.5 - 1.0 - 0.8 + 0.01;
@@ -125,7 +135,7 @@ describe('racing line and speed profile', () => {
   });
 
   it('cuts the curvature compared to following the centreline', () => {
-    const t = buildPresetTrack(TRACK_PRESETS[0]);
+    const t = buildPresetTrack(ROAD_PRESETS[0]);
     const line = computeRacingLine(t, { carHalfWidth: 1.0, margin: 0.8 });
     const sum = (a: number[]) => a.reduce((x, y) => x + Math.abs(y), 0);
     const centre = t.curvature.map(Math.abs);
@@ -133,7 +143,7 @@ describe('racing line and speed profile', () => {
   });
 
   it('produces a speed profile with slow corners and fast straights', () => {
-    const t = buildPresetTrack(TRACK_PRESETS[0]);
+    const t = buildPresetTrack(ROAD_PRESETS[0]);
     const line = computeRacingLine(t, { carHalfWidth: 1.0, margin: 0.8 });
     const speeds = computeSpeedProfile(t, line, 2.2 * 9.81, 18, 9, 90);
     const min = Math.min(...speeds);
@@ -147,7 +157,7 @@ describe('racing line and speed profile', () => {
   });
 
   it('a wet track lowers the whole speed profile', () => {
-    const t = buildPresetTrack(TRACK_PRESETS[0]);
+    const t = buildPresetTrack(ROAD_PRESETS[0]);
     const line = computeRacingLine(t, { carHalfWidth: 1.0, margin: 0.8 });
     const dry = computeSpeedProfile(t, line, 2.2 * 9.81, 18, 9, 90);
     const wetLine = { ...line, grip: line.grip.map(g => g * 0.65) };

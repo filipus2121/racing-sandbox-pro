@@ -130,6 +130,21 @@ export class Vehicle {
   accelLat = 0;
   downforce = 0;
   dragForce = 0;
+  /**
+   * Multiplier on aerodynamic drag, set by the session rather than the driver.
+   * Below 1 when the car is in somebody's draft - the wake of the car ahead
+   * removes a large part of the pressure drag, which on a bluff-bodied stock
+   * car is worth more than twenty kilometres an hour and is the entire reason
+   * superspeedway racing happens in packs.
+   */
+  dragMod = 1;
+  /**
+   * Multiplier on available tyre grip, set by the session. Below 1 when the car
+   * is carrying damage: a bent track bar or a creased splitter does not remove
+   * grip evenly, but scaling the friction budget is the honest first-order
+   * model of it.
+   */
+  gripMod = 1;
   mass = 620;
   tyreTemps = [0, 0, 0, 0];
   tyreWear = [0, 0, 0, 0];
@@ -188,6 +203,41 @@ export class Vehicle {
     this.vxLocal = speed;
     this.vyLocal = 0;
     this.speed = speed;
+    this.spinUp(speed);
+  }
+
+  /**
+   * Match the wheel and engine speeds to a road speed.
+   *
+   * This is not a nicety. place() on its own leaves every tyre at omega = 0
+   * while the body moves, and slipRatio = (omega*r - vx)/max(...) then reads
+   * -1.0: four fully locked tyres. The combined-slip law spends the entire
+   * friction budget on that longitudinal slip and hands the tyres almost no
+   * lateral force, so a car placed at speed - the whole starting grid, every
+   * pace car, every pit rejoin - spends its first moments with no grip at all.
+   * The free-rolling fronts recover in a few steps, but the driven rears are
+   * held down by engine braking torque and stay locked for half a second or
+   * more, which is a rear axle at 0.09 g against 0.81 g at the front. On a
+   * flat road that is survivable. On 31 degrees of banking, where the tyres
+   * owe a constant 0.6 g sideways from the very first step, it is a spin, and
+   * it is exactly what threw the pace car off the top of the turn.
+   */
+  spinUp(speed: number): void {
+    for (let i = 0; i < 4; i++) {
+      const front = i < 2;
+      const tyreSpec = front ? this.spec.tyreFront : this.spec.tyreRear;
+      const pressure = front ? this.setup.tyrePressureFront : this.setup.tyrePressureRear;
+      const radius = rollingRadius(tyreSpec, this.tyres[i], pressure);
+      this.tyres[i].omega = speed / Math.max(0.05, radius);
+    }
+    // Mirror the drivetrain solve in stepVehicle so the first step's torque
+    // lookup is not reading a stale crank speed.
+    const ratio = Math.abs(this.gearRatio()) * this.setup.finalDrive;
+    const drivenOmega = (this.tyres[2].omega + this.tyres[3].omega) / 2;
+    const engineOmega = Math.abs(drivenOmega * ratio);
+    const idleOmega = this.spec.engine.idleRpm * 2 * Math.PI / 60;
+    this.rpm = clamp(Math.max(engineOmega, idleOmega) * 60 / (2 * Math.PI), 500,
+      this.spec.engine.redlineRpm + 1200);
   }
 
   wheelPosition(i: number): { x: number; y: number } {
@@ -361,7 +411,7 @@ export function stepVehicle(
   const dfRear = ((spec.aero.downforceRear100 + wingR) * v2 + geR * v2) * k * stall;
   const downforce = Math.max(0, dfFront + dfRear);
   const drag = (spec.aero.drag100 + spec.aero.dragYawPerDeg * absYaw * 0.02 * v2 * 40) *
-    v2 * k;
+    v2 * k * car.dragMod;
   car.downforce = downforce;
   car.dragForce = drag;
 
@@ -614,7 +664,7 @@ export function stepVehicle(
       side: i % 2 === 0 ? 1 : -1,
       vx: Math.max(0.1, Math.abs(wheelVx)),
       waterDepth: surface.waterDepth,
-      surfaceGrip: surface.grip * env.baseGrip,
+      surfaceGrip: surface.grip * env.baseGrip * car.gripMod,
     }, {
       trackTempC: env.trackTempC,
       speed: Math.max(1, speed),
