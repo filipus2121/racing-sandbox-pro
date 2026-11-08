@@ -12,6 +12,15 @@ export interface RacingLine {
   grip: number[];
   /** Car half width + margin used to keep the car on the tarmac. */
   margin: number;
+  /**
+   * Usable lateral band per sample, metres, positive = left = inside on an
+   * oval. The track is often wider than the racing surface: an oval reserves
+   * its inside strip for the pit lane, so the band is not symmetric and both
+   * the AI and the world have to clamp against these rather than the raw
+   * track width.
+   */
+  limitLow: number[];
+  limitHigh: number[];
 }
 
 /**
@@ -27,6 +36,11 @@ export function computeRacingLine(
     iterations?: number;
     /** 0 = centreline, 1 = full use of the track width. */
     usage?: number;
+    /**
+     * Hard lateral band, metres, when the racing surface is not centred on the
+     * track centreline (ovals keep the inside strip free for the pit lane).
+     */
+    band?: { min: number; max: number };
   } = {},
 ): RacingLine {
   const n = track.xs.length;
@@ -35,6 +49,8 @@ export function computeRacingLine(
   const usage = clamp(opts.usage ?? 0.92, 0, 1);
   const limit = (i: number) =>
     Math.max(0.4, track.width[i] * 0.5 - halfWidth - margin) * usage;
+  const lo = (i: number) => (opts.band ? opts.band.min : -limit(i));
+  const hi = (i: number) => (opts.band ? opts.band.max : limit(i));
 
   const lat = new Float64Array(n);
   const curvature = new Float64Array(n);
@@ -90,7 +106,7 @@ export function computeRacingLine(
       const dir = Math.abs(curvWith) < Math.abs(curvWithout) ? 1 : -1;
       const gain = clamp(Math.abs(c) * 40, 0, 1);
       lat[i] += dir * step * gain * cooling;
-      lat[i] = clamp(lat[i], -limit(i), limit(i));
+      lat[i] = clamp(lat[i], lo(i), hi(i));
     }
     // Light lateral smoothing each sweep, so residual zigzag is damped out
     // rather than being amplified by the next independent move.
@@ -99,7 +115,7 @@ export function computeRacingLine(
       const a = (i - 1 + n) % n;
       const b = (i + 1) % n;
       smoothed[i] = clamp(lat[i] * 0.6 + (lat[a] + lat[b]) * 0.2,
-        -limit(i), limit(i));
+        lo(i), hi(i));
     }
     for (let i = 0; i < n; i++) {
       lat[i] = smoothed[i];
@@ -131,10 +147,29 @@ export function computeRacingLine(
     const y = track.ys[i] + Math.cos(h) * lat[i];
     const q = track.query(x, y);
     let g = clamp(q.grip, 0.2, 1.4);
-    // Banking helps a car going the "right" way around a banked corner.
-    const bankHelp = 1 + Math.sign(track.curvature[i]) * Math.sin(track.bankAt(i)) * 0.8;
-    g *= clamp(bankHelp, 0.7, 1.35);
+    // Banking hands the car lateral acceleration for free: gravity contributes
+    // g*tan(theta) towards the inside of the corner, on top of whatever the
+    // tyres can do. Against a nominal 1.0 g of mechanical grip that is a factor
+    // of 1 + tan(theta) -- 1.60 on a 31 degree superspeedway corner. The old
+    // sin(theta)*0.8 form capped the benefit at 1.35, which under-called a
+    // banked oval by about a quarter of its real speed.
+    // Deadband on the sign. On a straight the curvature is zero only up to
+    // float noise, and Math.sign() of a 1e-17 residual is a confident -1, which
+    // flips the banking from helping the car to fighting it: measured on
+    // Daytona this knocked the tri-oval/straight transition down to 0.72 of
+    // the grip the rest of the straight has, purely from a rounding artefact.
+    const k = track.curvature[i];
+    const dir = Math.abs(k) < 1e-6 ? 0 : Math.sign(k);
+    const bankHelp = 1 + dir * Math.tan(track.bankAt(i));
+    g *= clamp(bankHelp, 0.6, 2.4);
     grip[i] = g;
+  }
+
+  const limitLow: number[] = [];
+  const limitHigh: number[] = [];
+  for (let i = 0; i < n; i++) {
+    limitLow.push(lo(i));
+    limitHigh.push(hi(i));
   }
 
   return {
@@ -143,6 +178,8 @@ export function computeRacingLine(
     speedLimit: new Array(n).fill(30),
     grip: Array.from(grip),
     margin,
+    limitLow,
+    limitHigh,
   };
 }
 

@@ -228,6 +228,16 @@ export class Opponent {
     const wheelbase = car.spec.wheelbase;
     const curvTarget = line.curvature[targetIndex] ?? 0;
     const vRef = Math.max(4, speed);
+    // Bicycle-model feedforward, delta = wheelbase / R.
+    //
+    // Banking deliberately does NOT enter the angle. It is the tempting thing to
+    // do - subtract g*tan(theta) from the lateral demand and steer only for the
+    // remainder - and it is measurably wrong: on 31 degrees at 60 km/h a car
+    // with the wheels straight holds a 2891 m radius rather than the 21 m the
+    // "free grip" arithmetic predicts, because the tyres resist the downhill
+    // slide almost completely (tools/diag29.ts). Banking buys cornering speed,
+    // which is what the speed profile spends it on; the wheels still need very
+    // nearly wheelbase / R.
     const ff = Math.atan(wheelbase * curvTarget) *
       clamp(vRef * vRef / (wheelbase * Math.max(2, latAccel)), 0.15, 1.4);
     const kp = 1.5 + p.skill * 1.5;

@@ -95,6 +95,13 @@ export class Track {
   /** mm of standing water per sample. */
   readonly water: number[] = [];
   readonly surface: number[] = [];
+  /**
+   * Explicit cross-slope per sample, rad. When populated this overrides the
+   * curvature-derived model in bankAt(). Needed for ovals: a constant-radius
+   * turn has d(curvature)/ds = 0, so the derived model returns exactly zero
+   * banking in the middle of a 31 degree superspeedway corner.
+   */
+  readonly banking: number[] = [];
   totalLength = 0;
   startLateral = 0;
   /** Extra material outside the normal run-off, for scenery. */
@@ -345,11 +352,22 @@ export class Track {
     const drop = Math.abs(lateral) > half
       ? -Math.pow(Math.abs(lateral) - half, 1.3) * 0.06
       : 0;
-    return this.height[i] + inside * Math.tan(this.bankAt(i)) + drop;
+    // Negative, matching bankAt(): positive banking means the surface falls to
+    // the left, so elevation DECREASES with lateral. The two used to disagree,
+    // which put the high side of a banked corner on the wrong flank.
+    return this.height[i] - inside * Math.tan(this.bankAt(i)) + drop;
   }
 
-  /** Cross-slope (banking) at a sample, rad. Positive lifts the left side. */
+  /**
+   * Cross-slope (banking) at a sample, rad.
+   *
+   * Sign convention, matching SurfaceSample.slopeAcross: POSITIVE means the
+   * surface falls away to the LEFT, so the right-hand side is the high side
+   * and gravity pushes the car towards the inside of a LEFT-hand corner. That
+   * is what a banked oval needs, since ovals turn left.
+   */
   bankAt(i: number): number {
+    if (this.banking.length === this.xs.length) return this.banking[i];
     const n = this.xs.length;
     const prev = (i - 1 + n) % n;
     const next = (i + 1) % n;
@@ -473,6 +491,39 @@ export class Track {
     }
   }
 
+  /**
+   * Set the explicit cross-slope field from a per-sample array, then smooth it
+   * along the arc so the banking ramps in over a transition length instead of
+   * stepping. Real ovals use a spiral (easement) into the corner for exactly
+   * this reason: a step in cross-slope is an instant load change the
+   * suspension cannot follow, and the car snaps loose at the entry.
+   *
+   * Values are signed radians; positive puts the high side on the outside of a
+   * left-hand corner (see bankAt).
+   */
+  setBanking(values: number[], transitionMetres = 120): void {
+    const n = this.xs.length;
+    if (values.length !== n) {
+      throw new Error(`setBanking: expected ${n} values, got ${values.length}`);
+    }
+    this.banking.length = 0;
+    for (let i = 0; i < n; i++) this.banking.push(values[i]);
+    // Triangular moving average over `transitionMetres` of arc length.
+    const ds = Math.max(0.25, this.totalLength / Math.max(2, n));
+    const half = Math.max(1, Math.round(transitionMetres / (2 * ds)));
+    const src = this.banking.slice();
+    for (let i = 0; i < n; i++) {
+      let sum = 0;
+      let weight = 0;
+      for (let d = -half; d <= half; d++) {
+        const w = 1 - Math.abs(d) / (half + 1);
+        sum += src[((i + d) % n + n) % n] * w;
+        weight += w;
+      }
+      this.banking[i] = sum / weight;
+    }
+  }
+
   /** Re-derive arc lengths after an edit. */
   refresh(): void {
     this.computeArcAndCurvature();
@@ -485,13 +536,14 @@ export class Track {
       name: this.name,
       xs: this.xs, ys: this.ys, width: this.width,
       height: this.height, surface: this.surface,
+      banking: this.banking.length === this.xs.length ? this.banking : undefined,
       startLateral: this.startLateral,
     };
   }
 
   static fromJSON(data: {
     name?: string; xs: number[]; ys: number[]; width?: number[];
-    height?: number[]; surface?: number[];
+    height?: number[]; surface?: number[]; banking?: number[];
   }): Track {
     const t = new Track();
     t.name = data.name ?? 'Imported';
@@ -506,6 +558,9 @@ export class Track {
       t.surface.push(data.surface?.[i] ?? SURFACE_TARMAC);
     }
     t.refresh();
+    if (data.banking?.length === n) {
+      for (let i = 0; i < n; i++) t.banking.push(data.banking[i]);
+    }
     return t;
   }
 
